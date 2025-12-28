@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+    <title>Skyblock v2025 - Bug Fixed</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #729fcf; font-family: 'Arial', sans-serif; touch-action: none; user-select: none; }
+        canvas { display: block; }
+        #ui-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+        #crosshair { position: absolute; top: 50%; left: 50%; width: 12px; height: 12px; border: 1.5px solid #fff; border-radius: 50%; transform: translate(-50%, -50%); z-index: 100; }
+        #top-bar { position: absolute; top: 5px; left: 5px; color: white; background: rgba(0,0,0,0.6); padding: 5px 15px; border-radius: 15px; font-size: 12px; pointer-events: auto; border: 1px solid #444; }
+        
+        .btn { position: absolute; background: rgba(30, 30, 30, 0.7); border: 1.5px solid #888; color: white; border-radius: 8px; pointer-events: auto; font-weight: bold; font-size: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 3px 0 #000; }
+        .btn.active { transform: translateY(2px); box-shadow: 0 1px 0 #000; background: #444; }
+        #w { bottom: 90px; left: 50px; width: 40px; height: 40px; }
+        #s { bottom: 10px; left: 50px; width: 40px; height: 40px; }
+        #a { bottom: 50px; left: 10px; width: 40px; height: 40px; }
+        #d { bottom: 50px; left: 90px; width: 40px; height: 40px; }
+        #sneak { bottom: 140px; left: 50px; width: 40px; height: 30px; font-size: 8px; background: #455A64; }
+        #jump { bottom: 80px; right: 10px; width: 55px; height: 55px; border-radius: 50%; background: #1976D2; }
+        #break { bottom: 15px; right: 80px; width: 50px; height: 50px; background: #c62828; }
+        #place { bottom: 15px; right: 15px; width: 50px; height: 50px; background: #2e7d32; }
+
+        #chat-container { position: absolute; bottom: 180px; left: 10px; width: 220px; pointer-events: auto; }
+        #chat-box { height: 110px; background: rgba(0,0,0,0.4); color: white; font-size: 11px; overflow-y: auto; padding: 5px; border-radius: 5px; }
+        #chat-input { width: 100%; background: rgba(0,0,0,0.8); border: 1px solid #555; color: white; padding: 5px; font-size: 12px; outline: none; margin-top: 5px; }
+
+        #hotbar { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); display: flex; gap: 5px; pointer-events: auto; background: rgba(0,0,0,0.8); padding: 5px; border-radius: 8px; }
+        .slot { width: 40px; height: 40px; border: 2px solid #555; display: flex; align-items: center; justify-content: center; position: relative; }
+        .slot.active { border-color: #00e5ff; background: rgba(0, 229, 255, 0.1); }
+        .slot img { width: 30px; height: 30px; image-rendering: pixelated; display: none; }
+        .slot-count { position: absolute; bottom: 0px; right: 2px; color: #fff; font-size: 10px; font-weight: bold; }
+        #item-preview { position: absolute; bottom: 75px; right: 80px; width: 60px; height: 60px; pointer-events: none; }
+    </style>
+</head>
+<body oncontextmenu="return false;">
+
+    <div id="ui-overlay">
+        <div id="top-bar">SKYBLOCK PRO v2 | <span id="p-count">1</span> OYUNCU</div>
+        <div id="crosshair"></div>
+        <canvas id="item-preview"></canvas>
+        
+        <div id="chat-container">
+            <div id="chat-box"></div>
+            <input type="text" id="chat-input" placeholder="Komut (/creative)...">
+        </div>
+
+        <div id="hotbar">
+            <div class="slot active" id="s0" onclick="selectSlot(0)"><img src=""><div class="slot-count"></div></div>
+            <div class="slot" id="s1" onclick="selectSlot(1)"><img src=""><div class="slot-count"></div></div>
+            <div class="slot" id="s2" onclick="selectSlot(2)"><img src=""><div class="slot-count"></div></div>
+            <div class="slot" id="s3" onclick="selectSlot(3)"><img src=""><div class="slot-count"></div></div>
+            <div class="slot" id="s4" onclick="selectSlot(4)"><img src=""><div class="slot-count"></div></div>
+        </div>
+
+        <button class="btn" id="w">W</button><button class="btn" id="s">S</button>
+        <button class="btn" id="a">A</button><button class="btn" id="d">D</button>
+        <button class="btn" id="sneak">IN</button>
+        <button class="btn" id="jump">ZIB</button>
+        <button class="btn" id="break">KIR</button>
+        <button class="btn" id="place">KOY</button>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <script>
+        document.onkeydown = (e) => { if(e.keyCode == 123 || (e.ctrlKey && e.shiftKey && [73,74,67].includes(e.keyCode))) return false; };
+
+        const config = { apiKey: "AIzaSyA56x1W2xmaOVQw72ZUIC67m4q5S42-89Y", databaseURL: "https://hcm-off-default-rtdb.firebaseio.com" };
+        firebase.initializeApp(config);
+        const db = firebase.database();
+        const pId = "PLY_" + Math.floor(Math.random() * 100000);
+        const worldRef = db.ref('world_v4');
+        const playerRef = db.ref('players/' + pId);
+        const chatRef = db.ref('chat');
+        const fxRef = db.ref('fx');
+
+        // GHOST PLAYER FIX: Eski oyuncuyu sil
+        playerRef.onDisconnect().remove();
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87CEEB);
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+        const sun = new THREE.DirectionalLight(0xffffff, 0.5);
+        sun.position.set(10, 20, 10); scene.add(sun);
+
+        const tL = new THREE.TextureLoader();
+        const getT = (f) => { const t = tL.load(f); t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; return t; };
+
+        const blockMats = {
+            grass: [getT('Grasslrws.png'), getT('Grasslrws.png'), getT('grasstop.png'), getT('GrassV.png'), getT('Grasslrws.png'), getT('Grasslrws.png')].map(m => new THREE.MeshStandardMaterial({map: m})),
+            stone: new THREE.MeshStandardMaterial({ map: getT('Stone.png') }),
+            wood: new THREE.MeshStandardMaterial({ map: getT('Wood.png') }),
+            leaves: new THREE.MeshStandardMaterial({ map: getT('Yaprak.png'), transparent: true, opacity: 0.9 })
+        };
+        const blockIcons = { grass: 'grasstop.png', stone: 'Stone.png', wood: 'Wood.png', leaves: 'Yaprak.png' };
+
+        const previewRenderer = new THREE.WebGLRenderer({ canvas: document.getElementById('item-preview'), alpha: true, antialias: true });
+        const previewScene = new THREE.Scene();
+        const previewCam = new THREE.PerspectiveCamera(45, 1, 0.1, 10);
+        previewCam.position.set(1.5, 1.2, 1.5); previewCam.lookAt(0,0,0);
+        previewScene.add(new THREE.AmbientLight(0xffffff, 1.2));
+        let previewMesh = null;
+
+        function updatePreviewItem(type) {
+            if (previewMesh) previewScene.remove(previewMesh);
+            if (!type) return;
+            previewMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), blockMats[type] instanceof Array ? blockMats[type] : blockMats[type]);
+            previewScene.add(previewMesh);
+        }
+
+        const worldData = {};
+        function createBlock(x, y, z, type, local = false) {
+            const k = `${x}_${y}_${z}`;
+            if (worldData[k]) return;
+            const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), blockMats[type] || blockMats.stone);
+            mesh.position.set(x, y, z); mesh.userData = { type, k };
+            scene.add(mesh); worldData[k] = mesh;
+            if (local) worldRef.child(k).set({ x, y, z, type });
+        }
+
+        worldRef.on('child_added', s => { const b = s.val(); createBlock(b.x, b.y, b.z, b.type, false); });
+        worldRef.on('child_removed', s => { if(worldData[s.key]) { scene.remove(worldData[s.key]); delete worldData[s.key]; } });
+
+        const playerPivot = new THREE.Object3D();
+        const camHold = new THREE.Object3D();
+        const myModel = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 1.8, 10), new THREE.MeshStandardMaterial({color: 0xff4444}));
+        scene.add(playerPivot); playerPivot.add(camHold); camHold.add(camera); playerPivot.add(myModel);
+        playerPivot.position.set(0, 5, 0); myModel.position.y = -0.1;
+
+        let vel = new THREE.Vector3(), input = { w:0, a:0, s:0, d:0, sneak:0, jump:0 }, canJ = false, yaw = 0, pitch = 0;
+        let isCreative = localStorage.getItem('sky_creative') === 'true';
+
+        const chatBox = document.getElementById('chat-box');
+        const chatInput = document.getElementById('chat-input');
+        let inv = JSON.parse(localStorage.getItem('sky_inv')) || [{t:'grass', n:10}, {t:'stone', n:0}, {t:'wood', n:0}, {t:'leaves', n:0}, {t:null, n:0}];
+
+        function updateInv() {
+            inv.forEach((item, i) => {
+                const s = document.getElementById('s' + i);
+                const img = s.querySelector('img'), cnt = s.querySelector('.slot-count');
+                if (item && item.t && item.n > 0) { img.src = blockIcons[item.t]; img.style.display = 'block'; cnt.innerText = item.n; }
+                else { img.style.display = 'none'; cnt.innerText = ''; }
+            });
+            updatePreviewItem(inv[curS] && inv[curS].t && inv[curS].n > 0 ? inv[curS].t : null);
+            localStorage.setItem('sky_inv', JSON.stringify(inv));
+        }
+
+        chatInput.onkeydown = (e) => {
+            if(e.key === "Enter" && chatInput.value.trim() !== "") {
+                const val = chatInput.value.trim();
+                if(val === "/creative") { 
+                    isCreative = true; 
+                    inv = [{t:'grass', n:64}, {t:'stone', n:64}, {t:'wood', n:64}, {t:'leaves', n:64}, {t:'stone', n:64}];
+                    updateInv();
+                } else if(val === "/survival") { 
+                    isCreative = false; 
+                } else { chatRef.push({ pId, msg: val }); }
+                localStorage.setItem('sky_creative', isCreative);
+                chatInput.value = ""; chatInput.blur();
+            }
+        };
+
+        chatRef.limitToLast(1).on('child_added', s => {
+            const d = s.val(); const div = document.createElement('div');
+            div.innerText = (d.pId === pId ? "Sen: " : "Oyuncu: ") + d.msg;
+            chatBox.appendChild(div); chatBox.scrollTop = chatBox.scrollHeight;
+        });
+
+        function checkCol(pos) {
+            if (isCreative) return false;
+            const r = 0.35;
+            for (let p of [[r,r], [-r,r], [r,-r], [-r,-r], [0,0]]) {
+                const cx = Math.round(pos.x + p[0]), cz = Math.round(pos.z + p[1]);
+                if (worldData[`${cx}_${Math.round(pos.y - 1.85)}_${cz}`] || worldData[`${cx}_${Math.round(pos.y - 0.5)}_${cz}`]) return true;
+            }
+            return false;
+        }
+
+        const ray = new THREE.Raycaster();
+        let curS = 0;
+
+        function action(mode) {
+            ray.setFromCamera(new THREE.Vector2(0,0), camera);
+            const hits = ray.intersectObjects(Object.values(worldData));
+            if (hits.length > 0 && hits[0].distance < 5) {
+                const hit = hits[0];
+                if (mode === 'break') {
+                    fxRef.push({ x: hit.object.position.x, y: hit.object.position.y, z: hit.object.position.z, type: hit.object.userData.type, pId });
+                    worldRef.child(hit.object.userData.k).remove();
+                } else {
+                    const active = inv[curS];
+                    if (isCreative || (active && active.t && active.n > 0)) {
+                        const p = hit.object.position.clone().add(hit.face.normal);
+                        createBlock(p.x, p.y, p.z, active.t || 'grass', true);
+                        if(!isCreative) { active.n--; updateInv(); }
+                    }
+                }
+            }
+        }
+
+        const activeTouches = {};
+        const handleInput = (id, k, state) => {
+            input[k] = state;
+            document.getElementById(id).classList.toggle('active', state);
+            if(id==='sneak' && !isCreative) myModel.scale.y = state ? 0.6 : 1.0;
+        };
+
+        document.addEventListener('touchstart', (e) => {
+            for (let t of e.changedTouches) {
+                const el = document.elementFromPoint(t.clientX, t.clientY);
+                if (el && el.classList.contains('btn')) {
+                    activeTouches[t.identifier] = el.id;
+                    if (el.id === 'break') action('break');
+                    else if (el.id === 'place') action('place');
+                    else handleInput(el.id, el.id, 1);
+                }
+            }
+        });
+
+        document.addEventListener('touchend', (e) => {
+            for (let t of e.changedTouches) {
+                const id = activeTouches[t.identifier];
+                if (id) { handleInput(id, id, 0); delete activeTouches[t.identifier]; }
+            }
+        });
+
+        window.selectSlot = (i) => { curS = i; document.querySelectorAll('.slot').forEach((s,idx)=>s.classList.toggle('active', idx===i)); updateInv(); };
+
+        let sX, sY;
+        document.addEventListener('touchstart', e => { if(e.target.tagName !== 'BUTTON' && e.target.tagName !== 'INPUT') { sX = e.touches[0].pageX; sY = e.touches[0].pageY; }});
+        document.addEventListener('touchmove', e => {
+            if(e.target.tagName !== 'BUTTON' && e.target.tagName !== 'INPUT') {
+                yaw -= (e.touches[0].pageX - sX) * 0.007;
+                pitch = Math.max(-1.5, Math.min(1.5, pitch - (e.touches[0].pageY - sY) * 0.007));
+                sX = e.touches[0].pageX; sY = e.touches[0].pageY;
+            }
+        });
+
+        const others = {};
+        function loop() {
+            requestAnimationFrame(loop);
+            const dt = 0.016;
+            playerPivot.rotation.y += (yaw - playerPivot.rotation.y) * 0.25;
+            camHold.rotation.x += (pitch - camHold.rotation.x) * 0.25;
+            camera.position.y += ((input.sneak && !isCreative ? 0.3 : 0.75) - camera.position.y) * 0.2;
+
+            const speed = input.sneak ? 2.5 : 5.5;
+            const dir = new THREE.Vector3(input.d - input.a, 0, input.s - input.w).applyQuaternion(playerPivot.quaternion).normalize();
+            
+            if(isCreative) {
+                vel.x = dir.x * 12; vel.z = dir.z * 12;
+                vel.y = (input.jump ? 10 : (input.sneak ? -10 : 0));
+            } else {
+                vel.x = dir.x * speed; vel.z = dir.z * speed; vel.y -= 22 * dt;
+            }
+
+            const nextPos = playerPivot.position.clone();
+            nextPos.x += vel.x * dt;
+            if (!checkCol(nextPos)) playerPivot.position.x = nextPos.x;
+            nextPos.copy(playerPivot.position);
+            nextPos.z += vel.z * dt;
+            if (!checkCol(nextPos)) playerPivot.position.z = nextPos.z;
+
+            const opY = playerPivot.position.y;
+            playerPivot.position.y += vel.y * dt;
+            canJ = false;
+            if (checkCol(playerPivot.position)) { if (vel.y < 0) canJ = true; playerPivot.position.y = opY; vel.y = 0; }
+            if (playerPivot.position.y < -40) playerPivot.position.set(0, 10, 0);
+
+            playerRef.set({ x: playerPivot.position.x, y: playerPivot.position.y, z: playerPivot.position.z, sneak: input.sneak, creative: isCreative });
+            renderer.render(scene, camera);
+            previewRenderer.render(previewScene, previewCam);
+        }
+
+        db.ref('players').on('value', s => {
+            const data = s.val() || {};
+            document.getElementById('p-count').innerText = Object.keys(data).length;
+            for (let id in data) {
+                if (id === pId) continue;
+                if (!others[id]) { others[id] = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 1.8, 10), new THREE.MeshStandardMaterial({color: 0x00ff00})); scene.add(others[id]); }
+                others[id].position.lerp(new THREE.Vector3(data[id].x, data[id].y, data[id].z), 0.2);
+                others[id].scale.y = (data[id].sneak && !data[id].creative) ? 0.7 : 1.0;
+            }
+            for (let id in others) if (!data[id]) { scene.remove(others[id]); delete others[id]; }
+        });
+
+        updateInv(); loop();
+        window.onresize = () => { camera.aspect = window.innerWidth/window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); };
+    </script>
+</body>
+</html>
